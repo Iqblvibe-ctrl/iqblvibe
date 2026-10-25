@@ -12,6 +12,7 @@ import {
   Building,
   Printer,
   Edit3,
+  Trash2,
   DollarSign
 } from 'lucide-react';
 import { DaiUtusan } from '../types/dai';
@@ -24,6 +25,7 @@ interface DetailModalProps {
   onOpenFundModal: (dai: DaiUtusan) => void;
   onOpenProgressModal: (dai: DaiUtusan) => void;
   onOpenEditModal: (dai: DaiUtusan) => void;
+  onDeleteDai?: (daiId: string, nama: string) => void;
 }
 
 export const DetailModal: React.FC<DetailModalProps> = ({
@@ -33,7 +35,9 @@ export const DetailModal: React.FC<DetailModalProps> = ({
   onOpenFundModal,
   onOpenProgressModal,
   onOpenEditModal,
+  onDeleteDai,
 }) => {
+  const [isConfirmingDelete, setIsConfirmingDelete] = React.useState(false);
   if (!isOpen || !dai) return null;
 
   const growth = hitungPertumbuhan(dai.tren.jamaahAwal, dai.tren.jamaahKini);
@@ -118,6 +122,37 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                 <Edit3 className="w-3.5 h-3.5 text-slate-500" />
                 <span>Edit Profil</span>
               </button>
+              {onDeleteDai && (
+                !isConfirmingDelete ? (
+                  <button
+                    onClick={() => setIsConfirmingDelete(true)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 rounded border border-rose-200 transition-colors"
+                    title="Hapus da'i dari seluruh perangkat"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Hapus</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-1 bg-rose-50 p-1 rounded border border-rose-300">
+                    <span className="text-[11px] text-rose-800 font-semibold px-1">Yakin hapus?</span>
+                    <button
+                      onClick={() => {
+                        onDeleteDai(dai.id, dai.nama);
+                        setIsConfirmingDelete(false);
+                      }}
+                      className="px-2 py-0.5 text-[11px] font-bold text-white bg-rose-600 hover:bg-rose-700 rounded transition-colors"
+                    >
+                      Ya, Hapus
+                    </button>
+                    <button
+                      onClick={() => setIsConfirmingDelete(false)}
+                      className="px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:bg-slate-200 rounded transition-colors"
+                    >
+                      Batal
+                    </button>
+                  </div>
+                )
+              )}
             </div>
           </div>
 

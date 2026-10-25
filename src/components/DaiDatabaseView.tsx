@@ -21,6 +21,7 @@ interface DaiDatabaseViewProps {
   onSelectDai: (dai: DaiUtusan) => void;
   onOpenAddModal: () => void;
   onOpenBulkImport: () => void;
+  onOpenGoogleSheets?: () => void;
 }
 
 export const DaiDatabaseView: React.FC<DaiDatabaseViewProps> = ({
@@ -28,6 +29,7 @@ export const DaiDatabaseView: React.FC<DaiDatabaseViewProps> = ({
   onSelectDai,
   onOpenAddModal,
   onOpenBulkImport,
+  onOpenGoogleSheets,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProvinsi, setSelectedProvinsi] = useState('Semua Provinsi');
@@ -150,6 +152,18 @@ export const DaiDatabaseView: React.FC<DaiDatabaseViewProps> = ({
               <FileSpreadsheet className="w-4 h-4 text-white" />
               <span>Import Massal (300+ Sekaligus)</span>
             </button>
+
+            {/* GOOGLE SHEETS BUTTON */}
+            {onOpenGoogleSheets && (
+              <button
+                onClick={onOpenGoogleSheets}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-600 rounded-lg transition-colors border border-emerald-500 shadow-sm whitespace-nowrap"
+                title="Buka Integrasi Google Sheets (Ekspor & Impor)"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-300" />
+                <span>Google Sheets</span>
+              </button>
+            )}
 
             <button
               onClick={handleExportCSV}

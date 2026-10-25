@@ -143,18 +143,22 @@ export const DaiModal: React.FC<DaiModalProps> = ({
       Number(formData.saranaDakwah) + 
       Number(formData.tunjanganKesehatanLogistik);
 
+    const generatedId = editingDai
+      ? editingDai.id
+      : `dai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
     const newDai: DaiUtusan = {
-      id: editingDai ? editingDai.id : `dai-${Date.now().toString().slice(-4)}`,
+      id: generatedId,
       nama: formData.nama.trim(),
       gelar: formData.gelar.trim() || undefined,
-      telepon: formData.telepon.trim(),
+      telepon: formData.telepon.trim() || '-',
       asalDaerah: formData.asalDaerah.trim() || formData.asalLembaga.trim() || 'Indonesia',
-      asalLembaga: formData.asalLembaga.trim(),
+      asalLembaga: formData.asalLembaga.trim() || 'Biro Dakwah Pedalaman Nusantara',
       pulau: formData.pulau,
-      provinsi: formData.provinsi.trim(),
-      kabupaten: formData.kabupaten.trim(),
-      kecamatan: formData.kecamatan.trim(),
-      titikDakwah: formData.titikDakwah.trim(),
+      provinsi: formData.provinsi.trim() || 'Sumatera Barat',
+      kabupaten: formData.kabupaten.trim() || 'Daerah 3T',
+      kecamatan: formData.kecamatan.trim() || 'Kecamatan Penugasan',
+      titikDakwah: formData.titikDakwah.trim() || 'Posko Dakwah Utama',
       kategoriWilayah: formData.kategoriWilayah,
       tanggalMulaiTugas: formData.tanggalMulaiTugas,
       durasiKontrakBulan: Number(formData.durasiKontrakBulan) || 12,
@@ -168,9 +172,9 @@ export const DaiModal: React.FC<DaiModalProps> = ({
         totalKebutuhanPerBulan: totalKebutuhan,
         danaTersalurkan: editingDai ? editingDai.dana.danaTersalurkan : totalKebutuhan,
         statusPencairan: editingDai ? editingDai.dana.statusPencairan : 'Tersalurkan Penuh',
-        sumberDonatur: formData.sumberDonatur.trim(),
+        sumberDonatur: formData.sumberDonatur.trim() || 'Infaq Kaum Muslimin',
         rekeningBank: formData.rekeningBank.trim(),
-        catatanDana: editingDai?.dana.catatanDana,
+        catatanDana: editingDai?.dana.catatanDana || '',
       },
       tren: {
         jamaahAwal: Number(formData.jamaahAwal) || 0,

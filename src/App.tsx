@@ -14,7 +14,10 @@ import {
   Layers,
   ArrowRight,
   FileSpreadsheet,
-  CheckCircle2
+  CheckCircle2,
+  Cloud,
+  CloudOff,
+  RefreshCw
 } from 'lucide-react';
 import { NationalMap } from './components/NationalMap';
 import { KpiMetrics } from './components/KpiMetrics';
@@ -27,6 +30,9 @@ import { DaiModal } from './components/DaiModal';
 import { DetailModal } from './components/DetailModal';
 import { FundModal } from './components/FundModal';
 import { ProgressModal } from './components/ProgressModal';
+import { GoogleSheetsModal } from './components/GoogleSheetsModal';
+import { User } from 'firebase/auth';
+import { initAuth } from './services/googleAuth';
 import { DaiUtusan, Korwil } from './types/dai';
 import { 
   loadDaiListFromStorage, 
@@ -34,6 +40,16 @@ import {
   INITIAL_DAI_LIST, 
   INITIAL_KORWIL_LIST 
 } from './data/initialData';
+import {
+  subscribeToDaiList,
+  subscribeToKorwilList,
+  saveDaiToFirestore,
+  deleteDaiFromFirestore,
+  bulkSaveDaiToFirestore,
+  saveKorwilToFirestore,
+  bulkSaveKorwilToFirestore,
+  fetchDaiListFromFirestore,
+} from './services/firebaseDb';
 
 const STORAGE_KEY_KORWIL = 'sidau_korwil_v1';
 
@@ -51,6 +67,31 @@ export default function App() {
     return INITIAL_KORWIL_LIST;
   });
 
+  // Cloud Real-Time Sync status
+  const [isCloudConnected, setIsCloudConnected] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Manual Cloud Sync trigger
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      const items = await fetchDaiListFromFirestore();
+      if (items.length > 0) {
+        setDaiList(items);
+        saveDaiListToStorage(items);
+        showToast(`Sinkronisasi berhasil! ${items.length} da'i termutakhir dari cloud.`);
+      } else {
+        showToast('Terhubung ke database cloud, siap digunakan.');
+      }
+      setIsCloudConnected(true);
+    } catch (err: any) {
+      console.error('Manual sync error:', err);
+      showToast(`Gagal sinkronisasi: ${err.message || 'Periksa koneksi internet'}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // Modal states
   const [selectedDaiForDetail, setSelectedDaiForDetail] = useState<DaiUtusan | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -62,6 +103,57 @@ export default function App() {
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [bulkImportTarget, setBulkImportTarget] = useState<'dai' | 'korwil'>('dai');
 
+  // Google Sheets state & Auth
+  const [isGoogleSheetsOpen, setIsGoogleSheetsOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  // 1. Google Workspace Auth Listener
+  useEffect(() => {
+    const unsub = initAuth(
+      (user) => setCurrentUser(user),
+      () => setCurrentUser(null)
+    );
+    return () => {
+      if (typeof unsub === 'function') unsub();
+    };
+  }, []);
+
+  // 2. Real-Time Cloud Firestore Multi-Device Listeners
+  useEffect(() => {
+    setIsSyncing(true);
+
+    const unsubDai = subscribeToDaiList(
+      (items) => {
+        setDaiList(items);
+        saveDaiListToStorage(items);
+        setIsCloudConnected(true);
+        setIsSyncing(false);
+      },
+      (err) => {
+        console.warn('Real-time sync notice:', err);
+        setIsSyncing(false);
+      }
+    );
+
+    const unsubKorwil = subscribeToKorwilList(
+      (items) => {
+        setKorwilList(items);
+        try {
+          localStorage.setItem(STORAGE_KEY_KORWIL, JSON.stringify(items));
+        } catch {}
+        setIsCloudConnected(true);
+      },
+      (err) => {
+        console.warn('Korwil sync notice:', err);
+      }
+    );
+
+    return () => {
+      unsubDai();
+      unsubKorwil();
+    };
+  }, []);
+
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -70,7 +162,7 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Sync Korwil to storage
+  // Sync Korwil to storage fallback
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_KORWIL, JSON.stringify(korwilList));
@@ -79,39 +171,81 @@ export default function App() {
     }
   }, [korwilList]);
 
-  const handleSaveDai = (savedDai: DaiUtusan) => {
+  // Handle Save (Add / Update) Da'i with automatic Cloud Sync
+  const handleSaveDai = async (savedDai: DaiUtusan) => {
     const exists = daiList.some((d) => d.id === savedDai.id);
     let updated: DaiUtusan[];
     if (exists) {
       updated = daiList.map((d) => (d.id === savedDai.id ? savedDai : d));
-      showToast(`Data ${savedDai.nama} berhasil diperbarui.`);
     } else {
       updated = [savedDai, ...daiList];
-      showToast(`Da'i baru ${savedDai.nama} berhasil didaftarkan.`);
     }
     setDaiList(updated);
     saveDaiListToStorage(updated);
+
+    try {
+      setIsSyncing(true);
+      await saveDaiToFirestore(savedDai);
+      showToast(
+        exists
+          ? `Data ${savedDai.nama} berhasil diperbarui & disinkronkan ke seluruh perangkat!`
+          : `Da'i baru ${savedDai.nama} berhasil didaftarkan & tersinkronisasi ke seluruh perangkat!`
+      );
+    } catch (e: any) {
+      console.error('Gagal menyimpan ke Firestore:', e);
+      showToast(`Peringatan: Gagal sinkronisasi cloud (${e?.message || 'Periksa koneksi'}).`);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
-  // Bulk Import Handler for Da'i (supports 300+ entries)
-  const handleBulkImportDai = (newData: DaiUtusan[], replaceAll: boolean) => {
+  // Handle Delete Da'i
+  const handleDeleteDai = async (daiId: string, daiNama: string) => {
+    const updated = daiList.filter((d) => d.id !== daiId);
+    setDaiList(updated);
+    saveDaiListToStorage(updated);
+    setSelectedDaiForDetail(null);
+
+    try {
+      setIsSyncing(true);
+      await deleteDaiFromFirestore(daiId);
+      showToast(`Data ${daiNama} telah dihapus dari seluruh perangkat.`);
+    } catch (e: any) {
+      console.error('Gagal menghapus dari Firestore:', e);
+      showToast(`Gagal menghapus di cloud: ${e?.message || 'Error'}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Bulk Import Handler for Da'i (supports 300+ entries) with Cloud Sync
+  const handleBulkImportDai = async (newData: DaiUtusan[], replaceAll: boolean) => {
     let result: DaiUtusan[];
     if (replaceAll) {
       result = newData;
-      showToast(`Berhasil mengganti seluruh database dengan ${newData.length} data da'i baru.`);
+      showToast(`Menyinkronkan ${newData.length} data da'i baru ke seluruh perangkat...`);
     } else {
-      // Append unique by ID or name
       const existingNames = new Set(daiList.map((d) => d.nama.toLowerCase().trim()));
       const filteredNew = newData.filter((d) => !existingNames.has(d.nama.toLowerCase().trim()));
       result = [...filteredNew, ...daiList];
-      showToast(`Berhasil menambahkan ${filteredNew.length} da'i baru (Total: ${result.length} da'i).`);
+      showToast(`Menyinkronkan ${filteredNew.length} da'i baru ke seluruh perangkat...`);
     }
     setDaiList(result);
     saveDaiListToStorage(result);
+
+    try {
+      setIsSyncing(true);
+      await bulkSaveDaiToFirestore(result, replaceAll);
+      showToast(`Database berhasil disinkronkan ke seluruh perangkat (${result.length} da'i).`);
+    } catch (e) {
+      console.error('Gagal sinkronisasi impor massal ke Firestore:', e);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // Bulk Import Handler for Korwil
-  const handleBulkImportKorwil = (newData: Korwil[], replaceAll: boolean) => {
+  const handleBulkImportKorwil = async (newData: Korwil[], replaceAll: boolean) => {
     let result: Korwil[];
     if (replaceAll) {
       result = newData;
@@ -119,7 +253,16 @@ export default function App() {
       result = [...newData, ...korwilList];
     }
     setKorwilList(result);
-    showToast(`Berhasil mengimpor data Korwil (${result.length} wilayah komando).`);
+    try {
+      localStorage.setItem(STORAGE_KEY_KORWIL, JSON.stringify(result));
+      setIsSyncing(true);
+      await bulkSaveKorwilToFirestore(result);
+      showToast(`Data Korwil (${result.length} wilayah) tersinkronisasi ke seluruh perangkat.`);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   return (
@@ -207,6 +350,42 @@ export default function App() {
 
             {/* Zone 3: Primary Action Button & Bulk Import Trigger */}
             <div className="flex items-center gap-2.5 shrink-0">
+              {/* Cloud Sync Status Indicator & Manual Refresh Button */}
+              <button 
+                onClick={handleManualSync}
+                disabled={isSyncing}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 border border-slate-700/80 text-slate-300 shadow-xs transition cursor-pointer group"
+                title="Status Sinkronisasi Multi-Perangkat. Klik untuk menyinkronkan data terbaru dari Cloud Firestore."
+              >
+                {isSyncing ? (
+                  <RefreshCw className="w-3.5 h-3.5 text-blue-400 animate-spin" />
+                ) : isCloudConnected ? (
+                  <span className="flex h-2 w-2 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                ) : (
+                  <CloudOff className="w-3.5 h-3.5 text-amber-400" />
+                )}
+                <span className="font-semibold text-[11px] text-slate-200 hidden sm:inline">
+                  {isSyncing ? 'Sinkronisasi...' : isCloudConnected ? 'Cloud Realtime' : 'Hubungkan Cloud'}
+                </span>
+                <RefreshCw className="w-3 h-3 text-slate-400 group-hover:text-blue-300 group-hover:rotate-180 transition-transform" />
+              </button>
+
+              {/* GOOGLE SHEETS BUTTON */}
+              <button
+                onClick={() => setIsGoogleSheetsOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-600 rounded-lg transition-colors border border-emerald-500 shadow-sm whitespace-nowrap"
+                title="Buka Integrasi Google Sheets (Ekspor, Impor, & Sinkronisasi)"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
+                <span>Google Sheets</span>
+                {currentUser && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-300 inline-block animate-pulse ml-0.5" title="Terhubung ke Google Workspace"></span>
+                )}
+              </button>
+
               <button
                 onClick={() => {
                   setBulkImportTarget(activeMenu === 'database-korwil' ? 'korwil' : 'dai');
@@ -400,6 +579,7 @@ export default function App() {
                 setBulkImportTarget('dai');
                 setIsBulkImportOpen(true);
               }}
+              onOpenGoogleSheets={() => setIsGoogleSheetsOpen(true)}
             />
           </div>
         )}
@@ -498,6 +678,17 @@ export default function App() {
         targetType={bulkImportTarget}
         onImportDai={handleBulkImportDai}
         onImportKorwil={handleBulkImportKorwil}
+        onOpenGoogleSheets={() => setIsGoogleSheetsOpen(true)}
+      />
+
+      {/* Google Sheets Modal (Export, Import, & Sync) */}
+      <GoogleSheetsModal
+        isOpen={isGoogleSheetsOpen}
+        onClose={() => setIsGoogleSheetsOpen(false)}
+        daiList={daiList}
+        onImportDai={(data, replace) => handleBulkImportDai(data, replace)}
+        currentUser={currentUser}
+        onAuthChange={(user) => setCurrentUser(user)}
       />
 
       {/* Detail Modal */}
@@ -511,6 +702,7 @@ export default function App() {
           setEditingDai(dai);
           setIsAddModalOpen(true);
         }}
+        onDeleteDai={handleDeleteDai}
       />
 
       {/* Single Add Modal */}
@@ -529,10 +721,20 @@ export default function App() {
         isOpen={Boolean(fundModalDai)}
         onClose={() => setFundModalDai(null)}
         dai={fundModalDai}
-        onSave={(daiId, updatedDana) => {
-          setDaiList((prev) =>
-            prev.map((d) => (d.id === daiId ? { ...d, dana: updatedDana } : d))
-          );
+        onSave={async (daiId, updatedDana) => {
+          const target = daiList.find((d) => d.id === daiId);
+          if (target) {
+            const updated = { ...target, dana: updatedDana };
+            const nextList = daiList.map((d) => (d.id === daiId ? updated : d));
+            setDaiList(nextList);
+            saveDaiListToStorage(nextList);
+            try {
+              await saveDaiToFirestore(updated);
+              showToast(`Alokasi dana ${target.nama} tersinkronisasi ke seluruh perangkat.`);
+            } catch (e) {
+              console.error(e);
+            }
+          }
           setFundModalDai(null);
         }}
       />
@@ -542,10 +744,20 @@ export default function App() {
         isOpen={Boolean(progressModalDai)}
         onClose={() => setProgressModalDai(null)}
         dai={progressModalDai}
-        onSave={(daiId, updatedTren) => {
-          setDaiList((prev) =>
-            prev.map((d) => (d.id === daiId ? { ...d, tren: updatedTren } : d))
-          );
+        onSave={async (daiId, updatedTren) => {
+          const target = daiList.find((d) => d.id === daiId);
+          if (target) {
+            const updated = { ...target, tren: updatedTren };
+            const nextList = daiList.map((d) => (d.id === daiId ? updated : d));
+            setDaiList(nextList);
+            saveDaiListToStorage(nextList);
+            try {
+              await saveDaiToFirestore(updated);
+              showToast(`Progres dakwah ${target.nama} tersinkronisasi ke seluruh perangkat.`);
+            } catch (e) {
+              console.error(e);
+            }
+          }
           setProgressModalDai(null);
         }}
       />

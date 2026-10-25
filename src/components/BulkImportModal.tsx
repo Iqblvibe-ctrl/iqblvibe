@@ -27,6 +27,7 @@ interface BulkImportModalProps {
   targetType: 'dai' | 'korwil';
   onImportDai: (data: DaiUtusan[], replaceAll: boolean) => void;
   onImportKorwil?: (data: Korwil[], replaceAll: boolean) => void;
+  onOpenGoogleSheets?: () => void;
 }
 
 export const BulkImportModal: React.FC<BulkImportModalProps> = ({
@@ -35,6 +36,7 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
   targetType,
   onImportDai,
   onImportKorwil,
+  onOpenGoogleSheets,
 }) => {
   const [activeTab, setActiveTab] = useState<'paste' | 'upload' | 'auto300'>('paste');
   const [rawText, setRawText] = useState('');
@@ -150,6 +152,20 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
               >
                 <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Isi Otomatis 300 Da'i</span>
+              </button>
+            )}
+            {onOpenGoogleSheets && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenGoogleSheets();
+                }}
+                className="py-3 px-3 font-semibold border-b-2 border-transparent text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5 transition-colors"
+                title="Buka panel impor & sinkronisasi Google Sheets resmi"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Google Sheets Cloud</span>
               </button>
             )}
           </div>
